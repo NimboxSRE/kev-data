@@ -1,0 +1,4 @@
+{
+    "description": "Vulnerabilidades que NimboxSRE confirma como explotadas y que aún no están en CISA KEV. Cada entrada necesita evidencia pública (https). Ver README.",
+    "vulnerabilities": []
+}
