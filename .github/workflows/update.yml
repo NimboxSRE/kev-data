@@ -62,11 +62,15 @@ jobs:
         run: python3 scripts/build.py
       - name: Publicar si cambió
         run: |
-          if git diff --quiet -- known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json poc.json; then
+          # Se preparan antes de comprobar: poc.json puede ser nuevo (sin
+          # rastrear) y `git diff` solo mira lo rastreado.
+          files="known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json"
+          [ -f poc.json ] && files="$files poc.json"
+          git add $files
+          if git diff --cached --quiet; then
             echo "sin cambios"; exit 0
           fi
           git config user.name "nimboxsre-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json poc.json
           git commit -m "Catálogo $(jq -r .catalogVersion known_exploited_vulnerabilities.json): $(jq -r .count known_exploited_vulnerabilities.json) entradas · SSVC $(jq -r .count ssvc.json) CVE · PoC $(jq -r '.count // 0' poc.json 2>/dev/null) CVE"
           git push
