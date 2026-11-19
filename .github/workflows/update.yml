@@ -5,7 +5,7 @@ on:
     - cron: "17 * * * *" # cada hora
   push:
     branches: [main]
-    paths: [additions.json, scripts/build.py, scripts/vulnrichment.py]
+    paths: [additions.json, scripts/build.py, scripts/vulnrichment.py, scripts/poc.py]
   workflow_dispatch:
 
 permissions:
@@ -39,15 +39,34 @@ jobs:
         run: |
           git clone -q --depth 1 --branch develop https://github.com/cisagov/vulnrichment "$RUNNER_TEMP/vr"
           python3 scripts/vulnrichment.py "$RUNNER_TEMP/vr" "$(git -C "$RUNNER_TEMP/vr" rev-parse HEAD)"
+      # PoC público en GitHub (nomi-sec). Es una señal más débil que el KEV, así
+      # que no va al catálogo: se publica aparte en poc.json. El clon es grande,
+      # de modo que solo se reconstruye una vez al día (04 UTC) o a mano.
+      - name: ¿Refrescar PoC? (nomi-sec)
+        id: poc
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api repos/nomi-sec/PoC-in-GitHub/commits/master --jq .sha)
+          have=$(jq -r '.commit // ""' poc.json 2>/dev/null || true)
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          if [ "$head" != "$have" ] && { [ "${{ github.event_name }}" != "schedule" ] || [ "$(date -u +%H)" = "04" ]; }; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+      - name: PoC de nomi-sec
+        if: steps.poc.outputs.changed == 'true'
+        run: |
+          git clone -q --depth 1 --branch master https://github.com/nomi-sec/PoC-in-GitHub "$RUNNER_TEMP/poc"
+          python3 scripts/poc.py "$RUNNER_TEMP/poc" "${{ steps.poc.outputs.head }}"
       - name: Generar catálogo
         run: python3 scripts/build.py
       - name: Publicar si cambió
         run: |
-          if git diff --quiet -- known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json; then
+          if git diff --quiet -- known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json poc.json; then
             echo "sin cambios"; exit 0
           fi
           git config user.name "nimboxsre-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json
-          git commit -m "Catálogo $(jq -r .catalogVersion known_exploited_vulnerabilities.json): $(jq -r .count known_exploited_vulnerabilities.json) entradas · SSVC $(jq -r .count ssvc.json) CVE"
+          git add known_exploited_vulnerabilities.json known_exploited_vulnerabilities.csv ssvc.json poc.json
+          git commit -m "Catálogo $(jq -r .catalogVersion known_exploited_vulnerabilities.json): $(jq -r .count known_exploited_vulnerabilities.json) entradas · SSVC $(jq -r .count ssvc.json) CVE · PoC $(jq -r '.count // 0' poc.json 2>/dev/null) CVE"
           git push
