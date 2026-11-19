@@ -105,14 +105,31 @@ def main():
         v["source"] = "NimboxSRE"
         by_cve[cve] = v
 
+    # Explotación activa según el SSVC de CISA (vulnrichment) que aún no está en
+    # el catálogo: entra con source CISA-ADP.
+    adp = 0
+    ssvc_file = ROOT / "ssvc.json"
+    if ssvc_file.exists():
+        for cve, a in json.loads(ssvc_file.read_text(encoding="utf-8")).get("active", {}).items():
+            if cve in by_cve:
+                continue
+            adp += 1
+            by_cve[cve] = {"cveID": cve, "vendorProject": a.get("vendor", ""), "product": a.get("product", ""),
+                           "vulnerabilityName": a.get("title", "") or cve, "dateAdded": a.get("date", ""),
+                           "shortDescription": a.get("description", ""),
+                           "requiredAction": "Aplicar el parche del fabricante o la mitigación indicada; si no hay, retirar el servicio de la red.",
+                           "dueDate": "", "knownRansomwareCampaignUse": "Unknown", "notes": "CISA marca explotación activa (SSVC, vulnrichment) y aún no está en KEV.",
+                           "cwes": [], "source": "CISA-ADP",
+                           "evidence": ["https://github.com/cisagov/vulnrichment"]}
     vulns = sorted(by_cve.values(), key=lambda v: (v.get("dateAdded", ""), v["cveID"]), reverse=True)
     out = {
         "title": "NimboxSRE Catalog of Known Exploited Vulnerabilities",
         "catalogVersion": cisa.get("catalogVersion", ""),
         "dateReleased": cisa.get("dateReleased", ""),
         "count": len(vulns),
-        "counts": {"CISA": len(vulns) - ours, "NimboxSRE": ours},
-        "sources": ["CISA KEV (https://www.cisa.gov/known-exploited-vulnerabilities-catalog)", "NimboxSRE (additions.json)"],
+        "counts": {"CISA": len(vulns) - ours - adp, "CISA-ADP": adp, "NimboxSRE": ours},
+        "sources": ["CISA KEV (https://www.cisa.gov/known-exploited-vulnerabilities-catalog)",
+                    "CISA-ADP: explotación activa en el SSVC de CISA (https://github.com/cisagov/vulnrichment)", "NimboxSRE (additions.json)"],
         "vulnerabilities": vulns,
     }
     new_json = json.dumps(out, indent=4, ensure_ascii=False) + "\n"
@@ -127,7 +144,7 @@ def main():
         w.writerow(FIELDS)
         for v in vulns:
             w.writerow([", ".join(v.get(k) or []) if k == "cwes" else v.get(k, "") for k in FIELDS])
-    print(f"actualizado: {len(vulns)} entradas ({ours} propias) · {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M} UTC")
+    print(f"actualizado: {len(vulns)} entradas ({ours} propias, {adp} de CISA-ADP) · {dt.datetime.now(dt.UTC):%Y-%m-%d %H:%M} UTC")
 
 
 if __name__ == "__main__":
